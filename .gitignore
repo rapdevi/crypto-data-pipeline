@@ -1,0 +1,27 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Lambda packaging
+package/
+package2/
+layer/
+lambda/
+*.zip
+
+# AWS
+.aws/
+trust-policy.json
+response.json
+transform-response.json
+sample.parquet
+
+# Environment
+.env
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
