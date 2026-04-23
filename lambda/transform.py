@@ -1,66 +1,52 @@
 import boto3, json, io
 import pandas as pd
 from datetime import datetime, timezone, timedelta
+from urllib.parse import unquote_plus
 
 s3 = boto3.client('s3')
 sns = boto3.client('sns')
 
 BUCKET = 'crypto-pipeline-ralph'
 SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:722851018793:crypto-price-alerts'
-DROP_THRESHOLD = -10.0  # Alert if price drops more than 10% in 1 hour
+DROP_THRESHOLD = -10.0
 
 
 def get_price_one_hour_ago(coin, current_time):
-    """Fetch the most recent Parquet file from 1 hour ago to compare prices."""
     one_hour_ago = current_time - timedelta(hours=1)
-
-    # Build the S3 prefix for 1 hour ago
     prefix = (
         f"processed/year={one_hour_ago.year}"
         f"/month={one_hour_ago.month:02d}"
         f"/day={one_hour_ago.day:02d}/"
     )
-
     try:
         response = s3.list_objects_v2(Bucket=BUCKET, Prefix=prefix)
         if 'Contents' not in response:
             return None
-
-        # Get the most recent file in that partition
         files = sorted(response['Contents'], key=lambda x: x['LastModified'])
         if not files:
             return None
-
         obj = s3.get_object(Bucket=BUCKET, Key=files[-1]['Key'])
         df_old = pd.read_parquet(io.BytesIO(obj['Body'].read()))
         row = df_old[df_old['coin'] == coin]
-
         if row.empty:
             return None
-
         return float(row['price_usd'].iloc[0])
-
     except Exception as e:
         print(f"Could not fetch historical price for {coin}: {e}")
         return None
 
 
 def check_anomalies(df, current_time):
-    """Check each coin for price drops greater than threshold vs 1 hour ago."""
     alerts = []
-
     for _, row in df.iterrows():
         coin = row['coin']
         current_price = row['price_usd']
         old_price = get_price_one_hour_ago(coin, current_time)
-
         if old_price is None or old_price == 0:
-            print(f"No historical data found for {coin}, skipping anomaly check.")
+            print(f"No historical data found for {coin}, skipping.")
             continue
-
         pct_change = ((current_price - old_price) / old_price) * 100
         print(f"{coin}: old={old_price}, current={current_price}, change={pct_change:.2f}%")
-
         if pct_change <= DROP_THRESHOLD:
             alerts.append({
                 'coin': coin,
@@ -68,12 +54,10 @@ def check_anomalies(df, current_time):
                 'current_price': round(current_price, 2),
                 'pct_change': round(pct_change, 2)
             })
-
     return alerts
 
 
 def send_alert(alerts, current_time):
-    """Publish an SNS alert email for all triggered coins."""
     lines = []
     for alert in alerts:
         lines.append(
@@ -81,7 +65,6 @@ def send_alert(alerts, current_time):
             f"  1 hour ago: ${alert['old_price']:,}\n"
             f"  Current:    ${alert['current_price']:,}"
         )
-
     message = (
         f"CRYPTO PRICE ALERT — {current_time.strftime('%Y-%m-%d %H:%M UTC')}\n"
         f"{'=' * 50}\n\n"
@@ -90,7 +73,6 @@ def send_alert(alerts, current_time):
         f"\n\n{'=' * 50}\n"
         f"Powered by your AWS crypto pipeline."
     )
-
     sns.publish(
         TopicArn=SNS_TOPIC_ARN,
         Subject=f"Crypto Alert: Price Drop Detected ({len(alerts)} coin(s))",
@@ -100,15 +82,19 @@ def send_alert(alerts, current_time):
 
 
 def lambda_handler(event, context):
-    # Get the S3 key of the file that triggered this Lambda
-    record = event['Records'][0]['s3']
-    key = record['object']['key']
+    try:
+        record = event['Records'][0]['s3']
+        key = unquote_plus(record['object']['key'])
+    except (KeyError, IndexError) as e:
+        print(f"Invalid event structure: {e}")
+        print(f"Event received: {json.dumps(event)}")
+        return {'statusCode': 400, 'body': 'Invalid event structure'}
 
-    # Read the raw JSON from S3
+    print(f"Processing key: {key}")
+
     obj = s3.get_object(Bucket=BUCKET, Key=key)
     raw = json.loads(obj['Body'].read())
 
-    # Flatten nested coin data into rows
     rows = []
     for coin, metrics in raw['data'].items():
         rows.append({
@@ -124,7 +110,6 @@ def lambda_handler(event, context):
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     current_time = datetime.now(timezone.utc)
 
-    # Write Parquet to processed folder
     dt = datetime.fromisoformat(raw['timestamp'])
     out_key = (
         f"processed/year={dt.year}/month={dt.month:02d}"
@@ -136,7 +121,6 @@ def lambda_handler(event, context):
     s3.put_object(Bucket=BUCKET, Key=out_key, Body=buf.read())
     print(f"Saved: {out_key}")
 
-    # Run anomaly detection
     alerts = check_anomalies(df, current_time)
     if alerts:
         send_alert(alerts, current_time)
