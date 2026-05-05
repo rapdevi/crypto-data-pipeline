@@ -9,7 +9,7 @@ sns = boto3.client('sns')
 BUCKET = 'crypto-pipeline-ralph'
 SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:722851018793:crypto-price-alerts'
 # DROP_THRESHOLD = -10.0
-DROP_THRESHOLD = -10.0
+DROP_THRESHOLD = -5.0
 
 def get_price_one_hour_ago(coin, current_time):
     one_hour_ago = current_time - timedelta(hours=1)
