@@ -1,0 +1,78 @@
+name: Deploy Lambda Functions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'lambda/**'
+
+jobs:
+  deploy:
+    name: Package and Deploy Lambdas
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.REMOVED }}
+          aws-secret-access-key: ${{ secrets.REMOVED }}
+          aws-region: us-east-1
+
+      - name: Package ingest Lambda
+        run: |
+          mkdir -p package_ingest
+          pip install requests -t package_ingest/
+          cp lambda/ingest.py package_ingest/
+          cd package_ingest && zip -r ../lambda/ingest.zip . && cd ..
+          echo "ingest.zip created"
+
+      - name: Package transform Lambda
+        run: |
+          mkdir -p package_transform
+          cp lambda/transform.py package_transform/
+          cd package_transform && zip -r ../lambda/transform.zip . && cd ..
+          echo "transform.zip created"
+
+      - name: Deploy ingest Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name crypto-ingest \
+            --zip-file fileb://lambda/ingest.zip \
+            --region us-east-1
+          aws lambda wait function-updated \
+            --function-name crypto-ingest
+          echo "crypto-ingest deployed"
+
+      - name: Deploy transform Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name crypto-transform \
+            --zip-file fileb://lambda/transform.zip \
+            --region us-east-1
+          aws lambda wait function-updated \
+            --function-name crypto-transform
+          echo "crypto-transform deployed"
+
+      - name: Verify deployments
+        run: |
+          echo "=== Ingest Lambda ==="
+          aws lambda get-function-configuration \
+            --function-name crypto-ingest \
+            --query '[FunctionName, LastModified, Runtime]' \
+            --region us-east-1
+
+          echo "=== Transform Lambda ==="
+          aws lambda get-function-configuration \
+            --function-name crypto-transform \
+            --query '[FunctionName, LastModified, Runtime]' \
+            --region us-east-1

@@ -8,7 +8,6 @@ __pycache__/
 package/
 package2/
 layer/
-lambda/
 *.zip
 
 # AWS
@@ -25,3 +24,13 @@ sample.parquet
 # OS
 .DS_Store
 Thumbs.db
+
+#terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfstate.backup
+# Lambda build artifacts
+package_ingest/
+package_transform/
+lambda/*.zip
