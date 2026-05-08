@@ -90,7 +90,7 @@ def lambda_handler(event, context):
         print(f"Event received: {json.dumps(event)}")
         return {'statusCode': 400, 'body': 'Invalid event structure'}
 
-    print(f"Processing key: {key}")
+    print(f"[crypto-pipeline] Processing key: {key}")
 
     obj = s3.get_object(Bucket=BUCKET, Key=key)
     raw = json.loads(obj['Body'].read())
