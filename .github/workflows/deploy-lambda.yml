@@ -6,10 +6,7 @@ on:
       - main
     paths:
       - 'lambda/**'
-      
-permissions:
-      id-token: write   # This is required for requesting the JWT
-      contents: read  
+
 jobs:
   deploy:
     name: Package and Deploy Lambdas
